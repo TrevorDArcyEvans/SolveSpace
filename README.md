@@ -197,9 +197,6 @@ The command-line interface is not available.
 
 ## Building on macOS
 
-Building on macOS
------------------
-
 You will need git, XCode tools and CMake. Git and CMake can be installed
 You will need git, XCode tools, CMake and libomp. Git, CMake and libomp can be installed
 via [Homebrew][]:
