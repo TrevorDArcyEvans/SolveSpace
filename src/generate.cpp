@@ -224,9 +224,11 @@ void SolveSpaceUI::GenerateAll(Generate type, bool andFindFree, bool genForBBox)
         if(PruneGroups(hg))
             goto pruned;
 
+        int groupRequestIndex = 0;
         for(auto &req : SK.request) {
             Request *r = &req;
             if(r->group != hg) continue;
+            r->groupRequestIndex = groupRequestIndex++;
 
             r->Generate(&(SK.entity), &(SK.param));
         }
@@ -533,6 +535,7 @@ void SolveSpaceUI::SolveGroup(hGroup hg, bool andFindFree) {
     WriteEqSystemForGroup(hg);
     Group *g = SK.GetGroup(hg);
     g->solved.remove.Clear();
+    g->solved.findToFixTimeout = SS.timeoutRedundantConstr;
     SolveResult how = sys.Solve(g, NULL,
                                    &(g->solved.dof),
                                    &(g->solved.remove),
@@ -547,8 +550,11 @@ void SolveSpaceUI::SolveGroup(hGroup hg, bool andFindFree) {
 }
 
 SolveResult SolveSpaceUI::TestRankForGroup(hGroup hg, int *rank) {
-    WriteEqSystemForGroup(hg);
     Group *g = SK.GetGroup(hg);
+    // If we don't calculate dof or redundant is allowed, there is
+    // no point to solve rank because this result is not meaningful
+    if(g->suppressDofCalculation || g->allowRedundant) return SolveResult::OKAY;
+    WriteEqSystemForGroup(hg);
     SolveResult result = sys.SolveRank(g, rank);
     FreeAllTemporary();
     return result;

@@ -130,39 +130,38 @@ void SSurface::SplitInHalf(bool byU, SSurface *sa, SSurface *sb) {
     sa->degn = sb->degn = degn;
 
     // by de Casteljau's algorithm in a projective space; so we must work
-    // on points (w*x, w*y, w*z, w)
-    WeightControlPoints();
+    // on points (w*x, w*y, w*z, w) so create a temporary copy
+    SSurface st;
+    st = *this;
+    st.WeightControlPoints();
 
     switch(byU ? degm : degn) {
         case 1:
-            sa->CopyRowOrCol (byU, 0, this, 0);
-            sb->CopyRowOrCol (byU, 1, this, 1);
+            sa->CopyRowOrCol (byU, 0, &st, 0);
+            sb->CopyRowOrCol (byU, 1, &st, 1);
 
-            sa->BlendRowOrCol(byU, 1, this, 0, this, 1);
-            sb->BlendRowOrCol(byU, 0, this, 0, this, 1);
+            sa->BlendRowOrCol(byU, 1, &st, 0, &st, 1);
+            sb->BlendRowOrCol(byU, 0, &st, 0, &st, 1);
             break;
 
         case 2:
-            sa->CopyRowOrCol (byU, 0, this, 0);
-            sb->CopyRowOrCol (byU, 2, this, 2);
+            sa->CopyRowOrCol (byU, 0, &st, 0);
+            sb->CopyRowOrCol (byU, 2, &st, 2);
 
-            sa->BlendRowOrCol(byU, 1, this, 0, this, 1);
-            sb->BlendRowOrCol(byU, 1, this, 1, this, 2);
+            sa->BlendRowOrCol(byU, 1, &st, 0, &st, 1);
+            sb->BlendRowOrCol(byU, 1, &st, 1, &st, 2);
 
             sa->BlendRowOrCol(byU, 2, sa,   1, sb,   1);
             sb->BlendRowOrCol(byU, 0, sa,   1, sb,   1);
             break;
 
         case 3: {
-            SSurface st;
-            st.degm = degm; st.degn = degn;
+            sa->CopyRowOrCol (byU, 0, &st, 0);
+            sb->CopyRowOrCol (byU, 3, &st, 3);
 
-            sa->CopyRowOrCol (byU, 0, this, 0);
-            sb->CopyRowOrCol (byU, 3, this, 3);
-
-            sa->BlendRowOrCol(byU, 1, this, 0, this, 1);
-            sb->BlendRowOrCol(byU, 2, this, 2, this, 3);
-            st. BlendRowOrCol(byU, 0, this, 1, this, 2); // scratch var
+            sa->BlendRowOrCol(byU, 1, &st, 0, &st, 1);
+            sb->BlendRowOrCol(byU, 2, &st, 2, &st, 3);
+            st. BlendRowOrCol(byU, 0, &st, 1, &st, 2); // use row/col 0 as scratch
 
             sa->BlendRowOrCol(byU, 2, sa,   1, &st,  0);
             sb->BlendRowOrCol(byU, 1, sb,   2, &st,  0);
@@ -177,7 +176,6 @@ void SSurface::SplitInHalf(bool byU, SSurface *sa, SSurface *sb) {
 
     sa->UnWeightControlPoints();
     sb->UnWeightControlPoints();
-    UnWeightControlPoints();
 }
 
 //-----------------------------------------------------------------------------
@@ -383,9 +381,8 @@ void SShell::AllPointsIntersecting(Vector a, Vector b,
                                    List<SInter> *il,
                                    bool asSegment, bool trimmed, bool inclTangent)
 {
-    SSurface *ss;
-    for(ss = surface.First(); ss; ss = surface.NextAfter(ss)) {
-        ss->AllPointsIntersecting(a, b, il,
+    for(SSurface &ss : surface) {
+        ss.AllPointsIntersecting(a, b, il,
             asSegment, trimmed, inclTangent);
     }
 }
@@ -421,6 +418,11 @@ SShell::Class SShell::ClassifyRegion(Vector edge_n, Vector inter_surf_n,
 // using the closest intersection point. If the ray hits a surface on edge,
 // then just reattempt in a different random direction.
 //-----------------------------------------------------------------------------
+
+// table of vectors in 6 arbitrary directions covering 4 of the 8 octants.
+// use overlapping sets of 3 to reduce memory usage.
+static const double Random[8] = {1.278, 5.0103, 9.427, -2.331, 7.13, 2.954, 5.034, -4.777};
+ 
 bool SShell::ClassifyEdge(Class *indir, Class *outdir,
                           Vector ea, Vector eb,
                           Vector p,
@@ -428,16 +430,13 @@ bool SShell::ClassifyEdge(Class *indir, Class *outdir,
 {
     List<SInter> l = {};
 
-    srand(0);
-
     // First, check for edge-on-edge
     int edge_inters = 0;
     Vector inter_surf_n[2], inter_edge_n[2];
-    SSurface *srf;
-    for(srf = surface.First(); srf; srf = surface.NextAfter(srf)) {
-        if(srf->LineEntirelyOutsideBbox(ea, eb, /*asSegment=*/true)) continue;
+    for(SSurface &srf : surface) {
+        if(srf.LineEntirelyOutsideBbox(ea, eb, /*asSegment=*/true)) continue;
 
-        SEdgeList *sel = &(srf->edges);
+        SEdgeList *sel = &(srf.edges);
         SEdge *se;
         for(se = sel->l.First(); se; se = sel->l.NextAfter(se)) {
             if((ea.Equals(se->a) && eb.Equals(se->b)) ||
@@ -447,9 +446,9 @@ bool SShell::ClassifyEdge(Class *indir, Class *outdir,
                 if(edge_inters < 2) {
                     // Edge-on-edge case
                     Point2d pm;
-                    srf->ClosestPointTo(p,  &pm, /*mustConverge=*/false);
+                    srf.ClosestPointTo(p,  &pm, /*mustConverge=*/false);
                     // A vector normal to the surface, at the intersection point
-                    inter_surf_n[edge_inters] = srf->NormalAt(pm);
+                    inter_surf_n[edge_inters] = srf.NormalAt(pm);
                     // A vector normal to the intersecting edge (but within the
                     // intersecting surface) at the intersection point, pointing
                     // out.
@@ -519,25 +518,25 @@ bool SShell::ClassifyEdge(Class *indir, Class *outdir,
     // are on surface) and for numerical stability, so we don't pick up
     // the additional error from the line intersection.
 
-    for(srf = surface.First(); srf; srf = surface.NextAfter(srf)) {
-        if(srf->LineEntirelyOutsideBbox(ea, eb, /*asSegment=*/true)) continue;
+    for(SSurface &srf : surface) {
+        if(srf.LineEntirelyOutsideBbox(ea, eb, /*asSegment=*/true)) continue;
 
         Point2d puv;
-        srf->ClosestPointTo(p, &(puv.x), &(puv.y), /*mustConverge=*/false);
-        Vector pp = srf->PointAt(puv);
+        srf.ClosestPointTo(p, &(puv.x), &(puv.y), /*mustConverge=*/false);
+        Vector pp = srf.PointAt(puv);
 
         if((pp.Minus(p)).Magnitude() > LENGTH_EPS) continue;
         Point2d dummy = { 0, 0 };
-        SBspUv::Class c = (srf->bsp) ? srf->bsp->ClassifyPoint(puv, dummy, srf) : SBspUv::Class::OUTSIDE;
+        SBspUv::Class c = (srf.bsp) ? srf.bsp->ClassifyPoint(puv, dummy, &srf) : SBspUv::Class::OUTSIDE;
         if(c == SBspUv::Class::OUTSIDE) continue;
 
         // Edge-on-face (unless edge-on-edge above superceded)
         Point2d pin, pout;
-        srf->ClosestPointTo(p.Plus(edge_n_in),  &pin,  /*mustConverge=*/false);
-        srf->ClosestPointTo(p.Plus(edge_n_out), &pout, /*mustConverge=*/false);
+        srf.ClosestPointTo(p.Plus(edge_n_in),  &pin,  /*mustConverge=*/false);
+        srf.ClosestPointTo(p.Plus(edge_n_out), &pout, /*mustConverge=*/false);
 
-        Vector surf_n_in  = srf->NormalAt(pin),
-               surf_n_out = srf->NormalAt(pout);
+        Vector surf_n_in  = srf.NormalAt(pin),
+               surf_n_out = srf.NormalAt(pout);
 
         *indir  = ClassifyRegion(edge_n_in,  surf_n_in,  surf_n);
         *outdir = ClassifyRegion(edge_n_out, surf_n_out, surf_n);
@@ -551,7 +550,7 @@ bool SShell::ClassifyEdge(Class *indir, Class *outdir,
         // Cast a ray in a random direction (two-sided so that we test if
         // the point lies on a surface, but use only one side for in/out
         // testing)
-        Vector ray = Vector::From(Random(1), Random(1), Random(1));
+        Vector ray = Vector::From(Random[cnt], Random[cnt+1], Random[cnt+2]);
 
         AllPointsIntersecting(
             p.Minus(ray), p.Plus(ray), &l,
@@ -600,7 +599,8 @@ bool SShell::ClassifyEdge(Class *indir, Class *outdir,
         // then our ray always lies on edge, and that's okay. Otherwise
         // try again in a different random direction.
         if(!onEdge) break;
-        if(cnt++ > 5) {
+        cnt++;
+        if(cnt > 5) {
             dbp("can't find a ray that doesn't hit on edge!");
             dbp("on edge = %d, edge_inters = %d", onEdge, edge_inters);
             SS.nakedEdges.AddEdge(ea, eb);

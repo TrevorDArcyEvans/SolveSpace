@@ -175,6 +175,7 @@ public:
     bool        suppress;
     bool        relaxConstraints;
     bool        allowRedundant;
+    bool        suppressDofCalculation;
     bool        allDimsReference;
     double      scale;
 
@@ -189,6 +190,8 @@ public:
     struct {
         SolveResult         how;
         int                 dof;
+        int                 findToFixTimeout;
+        bool                timeout;
         List<hConstraint>   remove;
     } solved;
 
@@ -196,6 +199,9 @@ public:
         // For drawings in 2d
         WORKPLANE_BY_POINT_ORTHO   = 6000,
         WORKPLANE_BY_LINE_SEGMENTS = 6001,
+        WORKPLANE_BY_POINT_NORMAL  = 6002,
+        //WORKPLANE_BY_POINT_FACE    = 6003,
+        //WORKPLANE_BY_FACE          = 6004,
         // For extrudes, translates, and rotates
         ONE_SIDED                  = 7000,
         TWO_SIDED                  = 7001
@@ -264,6 +270,7 @@ public:
     void Generate(EntityList *entity, ParamList *param);
     bool IsSolvedOkay();
     void TransformImportedBy(Vector t, Quaternion q);
+    bool IsTriangleMeshAssembly() const;
     bool IsForcedToMeshBySource() const;
     bool IsForcedToMesh() const;
     // When a request generates entities from entities, and the source
@@ -321,6 +328,7 @@ public:
     void DrawPolyError(Canvas *canvas);
     void DrawFilledPaths(Canvas *canvas);
     void DrawContourAreaLabels(Canvas *canvas);
+    bool ShouldDrawExploded() const;
 
     SPolygon GetPolygon();
 
@@ -366,6 +374,7 @@ public:
     std::string font;
     Platform::Path file;
     double      aspectRatio;
+    int groupRequestIndex;
 
     static hParam AddParam(ParamList *param, hParam hp);
     void Generate(EntityList *entity, ParamList *param);
@@ -409,6 +418,7 @@ public:
         FACE_N_TRANS           =  5003,
         FACE_N_ROT_AA          =  5004,
         FACE_ROT_NORMAL_PT     =  5005,
+        FACE_N_ROT_AXIS_TRANS  =  5006,
 
         WORKPLANE              = 10000,
         LINE_SEGMENT           = 11000,
@@ -565,6 +575,7 @@ public:
 
     bool IsStylable() const;
     bool IsVisible() const;
+    bool CanBeDragged() const;
 
     enum class DrawAs { DEFAULT, OVERLAY, HIDDEN, HOVERED, SELECTED };
     void Draw(DrawAs how, Canvas *canvas);
@@ -587,6 +598,10 @@ public:
         beziers.l.Clear();
         edges.l.Clear();
     }
+
+    bool ShouldDrawExploded() const;
+    Vector ExplodeOffset() const;
+    Vector PointGetDrawNum() const;
 };
 
 class EntReqTable {
@@ -608,7 +623,7 @@ public:
     bool        free;
 
     // Used only in the solver
-    hParam      substd;
+    Param       *substd;
 
     static const hParam NO_PARAM;
 
@@ -669,7 +684,10 @@ public:
         CURVE_CURVE_TANGENT    = 125,
         EQUAL_RADIUS           = 130,
         WHERE_DRAGGED          = 200,
-
+        ARC_ARC_LEN_RATIO      = 210,
+        ARC_LINE_LEN_RATIO     = 211,
+        ARC_ARC_DIFFERENCE     = 212,
+        ARC_LINE_DIFFERENCE    = 213,
         COMMENT                = 1000
     };
 
@@ -703,6 +721,7 @@ public:
     }
 
     bool HasLabel() const;
+    bool IsProjectible() const;
 
     void Generate(IdList<Param, hParam> *param);
 
@@ -752,7 +771,7 @@ public:
                       Vector p0, Vector p1, Vector pt, double salient);
     void DoArcForAngle(Canvas *canvas, Canvas::hStroke hcs,
                        Vector a0, Vector da, Vector b0, Vector db,
-                       Vector offset, Vector *ref, bool trim);
+                       Vector offset, Vector *ref, bool trim, Vector explodeOffset);
     void DoArrow(Canvas *canvas, Canvas::hStroke hcs,
                  Vector p, Vector dir, Vector n, double width, double angle, double da);
     void DoLineWithArrows(Canvas *canvas, Canvas::hStroke hcs,
@@ -774,6 +793,8 @@ public:
 
     std::string DescriptionString() const;
 
+    bool ShouldDrawExploded() const;
+
     static hConstraint AddConstraint(Constraint *c, bool rememberForUndo = true);
     static void MenuConstrain(Command id);
     static void DeleteAllConstraintsFor(Constraint::Type type, hEntity entityA, hEntity ptA);
@@ -785,6 +806,9 @@ public:
     static hConstraint TryConstrain(Constraint::Type type, hEntity ptA, hEntity ptB,
                                     hEntity entityA, hEntity entityB = Entity::NO_ENTITY,
                                     bool other = false, bool other2 = false);
+    static bool ConstrainArcLineTangent(Constraint *c, Entity *line, Entity *arc);
+    static bool ConstrainCubicLineTangent(Constraint *c, Entity *line, Entity *cubic);
+    static bool ConstrainCurveCurveTangent(Constraint *c, Entity *eA, Entity *eB);
 };
 
 class hEquation {
@@ -875,13 +899,18 @@ public:
         RgbaColor   color;
         double      width;
         int         zIndex;
+        bool        exportable;
+        StipplePattern stippleType;
     } Default;
     static const Default Defaults[];
 
     static std::string CnfColor(const std::string &prefix);
     static std::string CnfWidth(const std::string &prefix);
+    static std::string CnfStippleType(const std::string &prefix);
+    static std::string CnfStippleScale(const std::string &prefix);
     static std::string CnfTextHeight(const std::string &prefix);
     static std::string CnfPrefixToName(const std::string &prefix);
+    static std::string CnfExportable(const std::string &prefix);
 
     static void CreateAllDefaultStyles();
     static void CreateDefaultStyle(hStyle h);
@@ -908,7 +937,11 @@ public:
     static bool Exportable(int hs);
     static hStyle ForEntity(hEntity he);
     static StipplePattern PatternType(hStyle hs);
+    static double StippleScale(hStyle hs);
     static double StippleScaleMm(hStyle hs);
+    static std::string StipplePatternName(hStyle hs);
+    static std::string StipplePatternName(StipplePattern stippleType);
+    static StipplePattern StipplePatternFromString(std::string name);
 
     std::string DescriptionString() const;
 
