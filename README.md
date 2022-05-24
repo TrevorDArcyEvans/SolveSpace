@@ -162,9 +162,9 @@ Space Navigator support will not be available.
 
 ## Building for web
 
-You will need the usual build tools, cmake, [Emscripten][] and flatc. On a Debian derivative (e.g. Ubuntu) dependencies other than Emscripten can be installed with:
+You will need the usual build tools, cmake, [Emscripten][]. On a Debian derivative (e.g. Ubuntu) dependencies other than Emscripten can be installed with:
 
-    apt-get install git build-essential cmake flatbuffers-compiler-dev
+    apt-get install git build-essential cmake
 
 First, install and prepare `emsdk`:
 
@@ -179,13 +179,13 @@ Before building, check out the project and the necessary submodules:
 
     git clone https://github.com/solvespace/solvespace
     cd solvespace
-    git submodule update
+    git submodule update --init
 
 After that, build SolveSpace as following:
 
     mkdir build
     cd build
-    emcmake cmake .. -DCMAKE_BUILD_TYPE=Release -DFLATC=flatc
+    emcmake cmake .. -DCMAKE_BUILD_TYPE=Release
     make
 
 The graphical interface is built as multiple files in the `build/bin` directory with names
